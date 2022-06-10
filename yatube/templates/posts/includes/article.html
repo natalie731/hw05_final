@@ -1,12 +1,12 @@
 {% load thumbnail %}
 <article>
   <ul>
-    {% if show_author_link == True %}
       <li>
         Автор: {{ post.author.get_full_name }}
+        {% if show_author_link %}
           <a href="{% url 'posts:profile' post.author.username %}">все посты пользователя</a>
+        {% endif %}
       </li>
-    {% endif %}
     <li>
       Дата публикации: {{ post.pub_date|date:'d E Y' }}
     </li>

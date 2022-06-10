@@ -1,6 +1,8 @@
-from core.models import CreatedModel
 from django.contrib.auth import get_user_model
 from django.db import models
+from django.urls import reverse
+
+from core.models import CreatedModel
 
 User = get_user_model()
 
@@ -47,6 +49,10 @@ class Comment(CreatedModel):
         related_name='comments')
     text = models.TextField()
 
+    def get_absolute_url(self):
+        return reverse('posts:post_detail',
+                       kwargs={'post_id': self.post.id})
+
 
 class Follow(models.Model):
     user = models.ForeignKey(
@@ -57,3 +63,9 @@ class Follow(models.Model):
         User,
         related_name='following',
         on_delete=models.CASCADE)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'author'],
+                name='Unique_follow')]

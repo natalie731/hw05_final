@@ -26,11 +26,13 @@
 
 [Х} - follow_index - шаблон
 [Х} - follow_index, profile_unfollow, profile_follow точный редирект
-[ ] - пользователь подписывается
-[ ] - пользователь отписывается
-[ ] - новая запись появляется у подписчика
-[ ] - новая запись НЕ появляется не подписчика
-[ ] - самоподписок быть не может
+[Х] - пользователь подписывается
+[Х] - пользователь отписывается
+[Х] - новая запись появляется у подписчика
+[Х] - новая запись НЕ появляется не подписчика
+[х] - нет дубль подписки
+[х] - нет удаления пустой подписки
+[х] - нет самоподписки
 '''
 import shutil
 import tempfile
@@ -65,34 +67,90 @@ class PostPagesTests(TestCase):
             name='posts/test.gif',
             content=test_gif,
             content_type='image/gif')
+
         cls.user = User.objects.create(username='auth')
         cls.alt_user = User.objects.create(username='alt_auth')
+        cls.author = User.objects.create(username='author')
         cls.group = Group.objects.create(slug='test-slug')
         cls.post = Post.objects.create(
             text='Тестовый пост',
-            author=cls.user,
+            author=cls.author,
             group=cls.group,
             image=uploaded)
         cls.comment = Comment.objects.create(
             text='Тестовый комментарий',
             author=cls.user,
             post=cls.post)
-
-        cls.guest_client = Client()
-        cls.authorized_client = Client()
-        cls.authorized_client.force_login(
-            PostPagesTests.user)
-        cls.not_author_client = Client()
-        cls.not_author_client.force_login(
-            PostPagesTests.alt_user)
+        Follow.objects.create(user=cls.user, author=cls.author)
 
     def setUp(self) -> None:
-        cache.clear()
+        self.guest_client = Client()
+        self.authorized_client = Client()
+        self.authorized_client.force_login(
+            PostPagesTests.author)
+        self.follower_client = Client()
+        self.follower_client.force_login(
+            PostPagesTests.user)
+        self.alt_authorized_client = Client()
+        self.alt_authorized_client.force_login(
+            PostPagesTests.alt_user)
 
     @classmethod
     def tearDownClass(cls):
         super().tearDownClass()
         shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
+
+    def func_redirect_control(self, client,
+                              url_to_redirect_pages: dict) -> None:
+        """Функция для контроля переадресаций.
+        Arguments:
+            url_to_redirect_pages -- словарь ключ: страница цель
+                                             значение: страница редиректа
+        """
+        for url, redirect_page in url_to_redirect_pages.items():
+            with self.subTest(url=url):
+                response = client.get(url, follow=True)
+                self.assertRedirects(response, redirect_page)
+
+    def func_post_content_for_test(self, post_tested) -> dict:
+        """Функция для компановки проверяемого и ожидаемого поста.
+
+        Arguments:
+            post_tested -- пост, полученный по запросую
+        """
+        post_expected: Post = self.post
+        return {
+            post_tested.id: post_expected.id,
+            post_tested.author: post_expected.author,
+            post_tested.group: post_expected.group,
+            post_tested.text: post_expected.text,
+            post_tested.pub_date: post_expected.pub_date,
+            post_tested.image: post_expected.image,
+        }
+
+    def func_assert_for_content_correct(self, test_data: dict) -> None:
+        """Функция проверяет соответствие контента страницы ожидаемому.
+
+        Arguments:
+            test_data -- словарь ключ: тестируемые данные,
+                                 значение: ожидаемые данные.
+        """
+        for tested, expected in test_data.items():
+            with self.subTest(tested=tested):
+                self.assertEqual(tested, expected)
+
+    def form_test_func(self, form_fields: dict,
+                       response_context: dict) -> None:
+        """Функция проверяет соответствие полей формы ожидаемым типам.
+
+        Arguments:
+            form_fields -- словарь ключ: поле формы, значение: тип поля.
+            response_context -- контекст формы.
+        """
+        for value, expected in form_fields.items():
+            with self.subTest(value=value):
+                form_field = response_context.fields[value]
+                self.assertIsInstance(form_field, expected)
 
     def test_page_uses_correct_template(self):
         """Namespace использует соответствующий шаблон."""
@@ -118,35 +176,6 @@ class PostPagesTests(TestCase):
                               f'использует шаблон {template}.'):
                 response = self.authorized_client.get(reverse_name)
                 self.assertTemplateUsed(response, template)
-
-    def func_redirect_control(self, client,
-                              url_to_redirect_pages: dict) -> None:
-        """Функция для контроля переадресаций.
-
-        Arguments:
-            url_to_redirect_pages -- словарь ключ: страница цель
-                                             значение: страница редиректа
-        """
-        for url, redirect_page in url_to_redirect_pages.items():
-            with self.subTest(url=url):
-                response = client.get(url, follow=True)
-                self.assertRedirects(response, redirect_page)
-
-    def func_post_content_for_test(self, post_tested) -> dict:
-        """Функция для компановки проверяемого и ожидаемого поста.
-
-        Arguments:
-            post_tested -- пост, полученный по запросую
-        """
-        post_expected: Post = self.post
-        return {
-            post_tested.id: post_expected.id,
-            post_tested.author: post_expected.author,
-            post_tested.group: post_expected.group,
-            post_tested.text: post_expected.text,
-            post_tested.pub_date: post_expected.pub_date,
-            post_tested.image: post_expected.image,
-        }
 
     def test_pages_uses_correct_redirect_for_guest_users(self):
         """
@@ -189,32 +218,8 @@ class PostPagesTests(TestCase):
             reverse('posts:post_edit', kwargs={'post_id': post.id}):
                 f'/posts/{post.id}/',
         }
-        self.func_redirect_control(self.not_author_client,
+        self.func_redirect_control(self.alt_authorized_client,
                                    url_to_redirect_pages)
-
-    def func_assert_for_content_correct(self, test_data: dict) -> None:
-        """Функция проверяет соответствие контента страницы ожидаемому.
-
-        Arguments:
-            test_data -- словарь ключ: тестируемые данные,
-                                 значение: ожидаемые данные.
-        """
-        for tested, expected in test_data.items():
-            with self.subTest(tested=tested):
-                self.assertEqual(tested, expected)
-
-    def form_test_func(self, form_fields: dict,
-                       response_context: dict) -> None:
-        """Функция проверяет соответствие полей формы ожидаемым типам.
-
-        Arguments:
-            form_fields -- словарь ключ: поле формы, значение: тип поля.
-            response_context -- контекст формы.
-        """
-        for value, expected in form_fields.items():
-            with self.subTest(value=value):
-                form_field = response_context.fields[value]
-                self.assertIsInstance(form_field, expected)
 
     def test_post_detail_page_show_correct_context(self):
         """В шаблон post_detail попадает nравильный контекст."""
@@ -290,7 +295,7 @@ class PostPagesTests(TestCase):
 
     def test_profile_page_show_correct_context(self):
         """В шаблон profile попадает nравильный контекст."""
-        username = PostPagesTests.user.username
+        username = PostPagesTests.author.username
         response = self.authorized_client.get(reverse(
             'posts:profile',
             kwargs={'username': username}))
@@ -329,6 +334,21 @@ class PostPagesTests(TestCase):
                 response = self.authorized_client.get(page)
                 self.assertIn('form', response.context)
                 self.form_test_func(form_fields, response.context['form'])
+
+    def test_follow_page__show_correct_context(self):
+        """В шаблон follow попадает nравильный контекст."""
+        response = self.follower_client.get(
+            reverse('posts:follow_index'))
+        self.assertIn('page_obj', response.context)
+        test_data = self.func_post_content_for_test(
+            response.context['page_obj'][0])
+        self.func_assert_for_content_correct(test_data)
+
+        response = self.alt_authorized_client.get(
+            reverse('posts:follow_index'))
+        self.assertIn('page_obj', response.context)
+        post_tested = response.context['page_obj']
+        self.assertNotEqual(post_tested, self.post)
 
 
 class PaginatorViewsTest(TestCase):
@@ -372,63 +392,98 @@ class PostCacheTests(TestCase):
         super().setUpClass()
         cls.user = User.objects.create(username='auth')
         cls.post = Post.objects.create(author=cls.user)
-        cls.guest_client = Client()
 
     def setUp(self) -> None:
-        cache.clear()
+        self.guest_client = Client()
 
     def test_cache_ingex_page_view(self) -> None:
         """Контент index page попадает в кеш."""
-        self.guest_client.get(
-            reverse('posts:index'))
+        response = self.guest_client.get(reverse('posts:index'))
+        test_cache = response.content
         self.post.delete()
-        self.assertEqual(len(cache.get('index_page')), 1)
+        response = self.guest_client.get(reverse('posts:index'))
+        self.assertEqual(test_cache, response.content)
         cache.clear()
-
-        self.guest_client.get(
-            reverse('posts:index'))
-        self.assertEqual(len(cache.get('index_page')), 0)
+        response = self.guest_client.get(reverse('posts:index'))
+        self.assertNotEqual(test_cache, response.content)
 
 
-class FollowTests(TestCase):
+class FollowDBTests(TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.user = User.objects.create(username='auth')
-        cls.alt_user = User.objects.create(username='alt_auth')
+        cls.user = User.objects.create_user(username='auth')
+        cls.alt_user = User.objects.create_user(username='alt_auth')
         cls.author = User.objects.create(username='author')
-        cls.post = Post.objects.create(author=cls.author,
-                                       text='Тестовый пост')
-        Follow.objects.create(user=cls.user, author=cls.author)
+        cls.post = Post.objects.create(author=cls.author)
+        Follow.objects.create(user=cls.alt_user, author=cls.author)
 
-        cls.authorized_client = Client()
-        cls.authorized_client.force_login(
-            FollowTests.user)
-        cls.alt_authorized_client = Client()
-        cls.alt_authorized_client.force_login(
-            FollowTests.alt_user)
+    def setUp(self) -> None:
+        self.authorized_client = Client()
+        self.authorized_client.force_login(FollowDBTests.user)
+        self.alt_authorized_client = Client()
+        self.alt_authorized_client.force_login(FollowDBTests.alt_user)
+        self.author_client = Client()
+        self.author_client.force_login(FollowDBTests.author)
 
-    def test_follow_page__show_correct_context(self):
-        """В шаблон follow попадает nравильный контекст."""
+    def test_save_follow(self):
+        """Подписка сохраняется в базу."""
+        follow_count = Follow.objects.count()
         response = self.authorized_client.get(
-            reverse('posts:follow_index'))
-        self.assertIn('page_obj', response.context)
-        post_tested = response.context['page_obj'][0]
-        post_expected: Post = self.post
-        test_data = {
-            post_tested.id: post_expected.id,
-            post_tested.author: post_expected.author,
-            post_tested.group: post_expected.group,
-            post_tested.text: post_expected.text,
-            post_tested.pub_date: post_expected.pub_date,
-            post_tested.image: post_expected.image,
-        }
-        for tested, expected in test_data.items():
-            with self.subTest(tested=tested):
-                self.assertEqual(tested, expected)
+            reverse('posts:profile_follow',
+                    kwargs={'username': self.author}))
+        self.assertRedirects(
+            response,
+            reverse('posts:profile', kwargs={'username': self.author}))
+        self.assertTrue(
+            Follow.objects.filter(
+                user=self.user,
+                author=self.author).exists())
+        self.assertEqual(Follow.objects.count(), follow_count + 1)
 
+    def test_no_save_double_follow(self):
+        """Дубль подписка не сохраняется в базу."""
+        follow_count = Follow.objects.count()
+        self.alt_authorized_client.get(
+            reverse('posts:profile_follow',
+                    kwargs={'username': self.author}))
+        self.assertEqual(Follow.objects.count(), follow_count)
+
+    def test_delete_follow(self):
+        """Подписка удаляется из базы."""
+        follow_count = Follow.objects.count()
         response = self.alt_authorized_client.get(
-            reverse('posts:follow_index'))
-        self.assertIn('page_obj', response.context)
-        post_tested = response.context['page_obj']
-        self.assertNotEqual(post_tested, self.post)
+            reverse('posts:profile_unfollow',
+                    kwargs={'username': self.author}))
+        self.assertRedirects(
+            response,
+            reverse('posts:profile', kwargs={'username': self.author}))
+        self.assertFalse(
+            Follow.objects.filter(
+                user=self.user,
+                author=self.author).exists())
+        self.assertEqual(Follow.objects.count(), follow_count - 1)
+
+    def test_double_delete_follow_redirect(self):
+        """Удаление пустой подписки вызывает редирект."""
+        response = self.authorized_client.get(
+            reverse('posts:profile_unfollow',
+                    kwargs={'username': self.author}))
+        self.assertRedirects(
+            response,
+            reverse('posts:profile', kwargs={'username': self.author}))
+
+    def test_delete_follow(self):
+        """Автор не может подписаться сам на себя."""
+        follow_count = Follow.objects.count()
+        response = self.author_client.get(
+            reverse('posts:profile_unfollow',
+                    kwargs={'username': self.author}))
+        self.assertRedirects(
+            response,
+            reverse('posts:profile', kwargs={'username': self.author}))
+        self.assertFalse(
+            Follow.objects.filter(
+                user=self.user,
+                author=self.author).exists())
+        self.assertEqual(Follow.objects.count(), follow_count)

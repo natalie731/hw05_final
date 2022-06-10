@@ -5,10 +5,8 @@
 [Х] - /unexisting, /group/unexisting, /post/unexisting,
       /post/unexisting/edit, /profile/unexisting == 404 шаблон 404.html
 [X] - Шаблоны 6-ти страниц
-
 [X] - гость /post/id/comment == 302
 [Х] - /posts/test/comment/ == 404 и шаблон 404.html
-
 [X] - гость /follow/, /profile/username/follow,
       /profile/username/unfollow == 302
 [X] - /follow/ шаблон
@@ -18,7 +16,6 @@
 
 from http import HTTPStatus
 
-from django.core.cache import cache
 from django.test import Client, TestCase
 
 from ..models import Group, Post, User
@@ -32,15 +29,13 @@ class PostURLTests(TestCase):
         cls.post = Post.objects.create(author=cls.user)
         cls.group = Group.objects.create(slug='test-slug')
 
-        cls.guest_client = Client()
-        cls.authorized_client = Client()
-        cls.authorized_client.force_login(cls.user)
-        cls.authorized_not_author_client = Client()
-        cls.user_not_author = User.objects.create(username='NotAuthor')
-        cls.authorized_not_author_client.force_login(cls.user_not_author)
-
-    def setUp(self) -> None:
-        cache.clear()
+    def setUp(self):
+        self.guest_client = Client()
+        self.authorized_client = Client()
+        self.authorized_client.force_login(PostURLTests.user)
+        self.authorized_not_author_client = Client()
+        self.user_not_author = User.objects.create(username='NotAuthor')
+        self.authorized_not_author_client.force_login(self.user_not_author)
 
     def test_url_ok_for_all_users(self):
         """URL доступен любому пользователю."""
@@ -95,12 +90,8 @@ class PostURLTests(TestCase):
         wrong_url = [
             '/group/unexisting/',
             '/profile/unexisting/',
-            '/posts/unexisting/edit',
             '/posts/unexisting/',
             '/unexisting_page/',
-            '/posts/unexisting/comment/',
-            '/profile/unexisting/follow/',
-            '/profile/unexisting/unfollow/',
         ]
         for url in wrong_url:
             with self.subTest(msg=f'Несуществующая страница {url} '

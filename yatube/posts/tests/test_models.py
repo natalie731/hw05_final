@@ -5,7 +5,6 @@
       и в Group 'Группа'
 [Х] - help_text в Post соответствует 'Текст нового поста'
       и в Group 'Группа, к которой будет относиться пост'
-
 [X] - Проверена длинная __str__ для Comment
 '''
 from core.models import LETTERS_IN_STR
