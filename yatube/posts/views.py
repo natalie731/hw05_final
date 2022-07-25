@@ -8,7 +8,6 @@ from .utils import post_obj
 COUNT_POST_ON_PAGE: int = 10
 
 
-# @cache_page(20, key_prefix="index_page")
 def index(request):
     """Главная страница."""
     post_list = Post.objects.select_related('group', 'author')
@@ -34,9 +33,9 @@ def profile(request, username):
     author = get_object_or_404(User, username=username)
     post_list = author.posts.select_related('group', 'author')
     if request.user.is_authenticated:
-        following = (Follow.objects.filter(
+        following = Follow.objects.filter(
             user=request.user,
-            author=author).exists())
+            author=author).exists()
     else:
         following = False
     context = {
@@ -113,7 +112,7 @@ def add_comment(request, post_id):
 @login_required
 def follow_index(request):
     """Лента подписок."""
-    post_list = (Post.objects.filter(author__following__user=request.user))
+    post_list = Post.objects.filter(author__following__user=request.user)
     context = {
         'page_obj': post_obj(request, post_list, COUNT_POST_ON_PAGE),
     }
@@ -127,7 +126,7 @@ def profile_follow(request, username):
     if request.user != author:
         Follow.objects.get_or_create(
             user=request.user,
-            author=author)[0]
+            author=author)
     return redirect('posts:profile', username)
 
 
